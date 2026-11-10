@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- A Township Tale's Windows server is the PC game (Mono) started with /start_server,
+         loaded by MelonLoader through TavernLauncher. Same target as Modding Tavern's mods. -->
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>ShardPerformance</AssemblyName>
+    <RootNamespace>ShardPerformance</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <DebugType>portable</DebugType>
+    <Deps>$(MSBuildProjectDirectory)/Dependencies</Deps>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Reference/**;tests/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <Reference Include="$(Deps)/*.dll" Exclude="$(Deps)/Root.Township.dll">
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="CheckDependencies" BeforeTargets="BeforeCompile">
+    <Error Condition="!Exists('$(Deps)/Root.Township-publicized.dll')"
+           Text="Missing game reference assemblies. Run scripts/fetch-dependencies.sh." />
+  </Target>
+</Project>
