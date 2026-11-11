@@ -219,11 +219,53 @@ namespace ShardPerformance
         /// already uses for its console), so the game's permission checks still apply; we do
         /// not fabricate permissions. Returns the command's output text.
         /// </summary>
+        /// <summary>
+        /// Server-authoritative kill: downs/kills the named player (or everyone) by calling
+        /// Die() on their health. This is the fast path behind ShardClient's tablet Kill
+        /// button - it reaches the target in ~1s, versus the policy's ~15s. Works on any
+        /// player on this server.
+        /// </summary>
+        private static string KillPlayers(string target)
+        {
+            if (string.IsNullOrWhiteSpace(target))
+                return "admin: usage: kill <username|all>";
+            bool all = target.Equals("all", StringComparison.OrdinalIgnoreCase);
+            int killed = 0;
+            foreach (Player p in Player.AllPlayers.OfType<Player>())
+            {
+                if (p == null || p.UserInfo == null)
+                    continue;
+                if (!all && !p.UserInfo.Username.Equals(target, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                try
+                {
+                    var ctrl = p.PlayerController;
+                    var health = ctrl == null ? null : ctrl.Health;
+                    if (health != null)
+                    {
+                        health.Die();
+                        killed++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ShardPerformanceMod.Instance?.LoggerInstance.Warning("Kill " + p.UserInfo.Username + " failed: " + ex.Message);
+                }
+            }
+            return "admin: killed " + killed + (all ? " player(s)" : " (" + target + ")");
+        }
+
         private static string RunGameCommand(string command, IPlayer player)
         {
             command = (command ?? "").Trim();
             if (command.Length == 0)
                 return "admin: nothing to run";
+
+            // Built-in: "kill <username>" or "kill all" - server-authoritative, so it works
+            // on any player, not only ones the vanilla console command set covers.
+            string[] w = command.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (w.Length >= 1 && w[0].Equals("kill", StringComparison.OrdinalIgnoreCase))
+                return KillPlayers(w.Length >= 2 ? w[1] : "");
 
             CommandContext context = CommandService.CurrentContext;
             try
