@@ -61,6 +61,7 @@ namespace ShardPerformance
             if (!NetworkSceneManager.IsServer)
                 return;
 
+            Commands.TryRegister();
             PerfMonitor.Sample(Time.unscaledDeltaTime);
 
             if (Time.realtimeSinceStartup >= _nextGateAt && (_forestNearOnly.Value || _itemsSameChunkOnly.Value))

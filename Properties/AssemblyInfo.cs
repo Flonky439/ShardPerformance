@@ -1,6 +1,6 @@
 using MelonLoader;
 using ShardPerformance;
 
-[assembly: MelonInfo(typeof(ShardPerformanceMod), "ShardPerformance", "0.3.1", "Flonky439", "https://github.com/Flonky439/ShardPerformance")]
+[assembly: MelonInfo(typeof(ShardPerformanceMod), "ShardPerformance", "0.3.2", "Flonky439", "https://github.com/Flonky439/ShardPerformance")]
 [assembly: MelonGame("Alta", "A Township Tale")]
 [assembly: HarmonyDontPatchAll]
