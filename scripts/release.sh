@@ -30,7 +30,7 @@ cp "$OUT/ShardPerformance.dll" "$STAGE/"
 
 echo "==> Pushing README and publishing v$VERSION to $REPO"
 git -C "$ROOT" add -A
-git -C "$ROOT" diff --cached --quiet || git -C "$ROOT" commit -qm "ShardPerformance $VERSION" -m "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+git -C "$ROOT" diff --cached --quiet || git -C "$ROOT" commit -qm "ShardPerformance $VERSION"
 git -C "$ROOT" push -q origin HEAD
 
 gh release create "v$VERSION" "$STAGE/ShardPerformance.dll" "$STAGE/ShardPerformance.dll.sha256" \
