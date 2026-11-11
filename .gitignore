@@ -3,3 +3,10 @@ obj/
 Dependencies/
 Reference/
 dist/
+
+# Never commit signing keys or secrets
+*.pem
+*.key
+dev-key*
+ShardDevKey*
+.shard/
