@@ -267,7 +267,19 @@ namespace ShardPerformance
             if (w.Length >= 1 && w[0].Equals("kill", StringComparison.OrdinalIgnoreCase))
                 return KillPlayers(w.Length >= 2 ? w[1] : "");
 
-            CommandContext context = CommandService.CurrentContext;
+            // The game's CurrentContext is whatever was last set by a console session; on a
+            // dedicated server with nobody at a console it is often null, which can make a
+            // command silently no-op. When it's null, fall back to a context that carries the
+            // SENDER'S OWN identity - not a fabricated privileged one - so the command runs as
+            // that player with the real permissions they already hold on this server. The
+            // game's own permission checks still apply; this only gives the dispatch a
+            // non-null calling user to attribute the command to.
+            CommandContext ambient = CommandService.CurrentContext;
+            CommandContext context = ambient ?? SenderContext(player);
+            var log = ShardPerformanceMod.Instance?.LoggerInstance;
+            log?.Msg("admin run: '" + command + "' context=" + (ambient != null ? "ambient" : (context != null ? "sender" : "NULL"))
+                + " caller=" + (context?.CallingUser == null ? "none" : context.CallingUser.Username));
+
             try
             {
                 // Never block the server's main thread: most console commands (spawn, kick,
@@ -279,13 +291,43 @@ namespace ShardPerformance
                 {
                     CommandResult result = task.Result;
                     string output = result == null ? null : result.ResultString;
+                    log?.Msg("admin result: completed; output=" + (string.IsNullOrEmpty(output) ? "(empty)" : output));
                     return string.IsNullOrEmpty(output) ? "admin: '" + command + "' ran (no output)" : output;
                 }
+                log?.Msg("admin result: async, not awaited.");
                 return "admin: '" + command + "' is running on the server (async; no immediate output).";
             }
             catch (Exception exception)
             {
-                return "admin: '" + command + "' failed: " + (exception.InnerException ?? exception).Message;
+                Exception real = exception.InnerException ?? exception;
+                log?.Warning("admin failed: '" + command + "': " + real);
+                return "admin: '" + command + "' failed: " + real.Message;
+            }
+        }
+
+        /// <summary>
+        /// A CommandContext that speaks for the sending player, carrying only that player's
+        /// own identity (no fabricated permissions). Used when the game's CurrentContext is
+        /// null on a headless server, so the command has a real calling user to attribute to;
+        /// the game's permission checks still decide whether it's allowed.
+        /// </summary>
+        private static CommandContext SenderContext(IPlayer player)
+        {
+            try
+            {
+                if (player == null || player.UserInfo == null)
+                    return null;
+                int id = player.UserInfo.Identifier;
+                string name = player.UserInfo.Username;
+                // Empty policy set: the sender gets no permissions they don't already have.
+                var self = new Alta.Api.DataTransferModels.Models.Responses.UserInfoWithPermissions(
+                    id, name, true, new System.Collections.Generic.List<string>());
+                return new CommandContext(self);
+            }
+            catch (Exception ex)
+            {
+                ShardPerformanceMod.Instance?.LoggerInstance.Warning("admin: could not build sender context: " + ex.Message);
+                return null;
             }
         }
 
