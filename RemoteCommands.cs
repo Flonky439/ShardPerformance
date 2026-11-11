@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using ATT.Character.QuickAccessMenu;
+using Alta.Console;
 using Alta.Networking;
 using Alta.Networking.Scripts.Player;
 using HarmonyLib;
@@ -36,6 +37,7 @@ namespace ShardPerformance
     internal static class RemoteCommands
     {
         internal const string Prefix = "shardperf ";
+        internal const string AdminPrefix = "shardadmin ";
         private const int MaxClockSkewSeconds = 120;
         private const int ReplyLimit = 850;
 
@@ -65,28 +67,41 @@ namespace ShardPerformance
             if (!NetworkSceneManager.IsServer || stream == null || !stream.IsReading)
                 return;
             string text = __instance.commandToSync;
-            if (text == null || !text.StartsWith(Prefix, StringComparison.Ordinal))
+            bool isPerf = text != null && text.StartsWith(Prefix, StringComparison.Ordinal);
+            bool isAdmin = text != null && text.StartsWith(AdminPrefix, StringComparison.Ordinal);
+            if (!isPerf && !isAdmin)
                 return;
 
+            string replyName = isAdmin ? "admin" : "perf";
             string reply;
             try
             {
-                string command = Authenticate(text.Substring(Prefix.Length), player, out string who);
-                ShardPerformanceMod.Instance.LoggerInstance.Msg("Remote perf command from " + who + ": " + command);
-                reply = Run(command);
-                ShardPerformanceMod.Instance.LoggerInstance.Msg(reply);
+                if (isAdmin)
+                {
+                    string command = AuthenticateAdmin(text.Substring(AdminPrefix.Length), player, out string who);
+                    ShardPerformanceMod.Instance.LoggerInstance.Msg("Remote admin command from " + who + ": " + command);
+                    reply = RunGameCommand(command, player);
+                    ShardPerformanceMod.Instance.LoggerInstance.Msg(reply);
+                }
+                else
+                {
+                    string command = Authenticate(text.Substring(Prefix.Length), player, out string who);
+                    ShardPerformanceMod.Instance.LoggerInstance.Msg("Remote perf command from " + who + ": " + command);
+                    reply = Run(command);
+                    ShardPerformanceMod.Instance.LoggerInstance.Msg(reply);
+                }
             }
             catch (Exception exception)
             {
-                reply = "perf: refused: " + exception.Message;
-                ShardPerformanceMod.Instance.LoggerInstance.Warning("Remote perf command "
+                reply = replyName + ": refused: " + exception.Message;
+                ShardPerformanceMod.Instance.LoggerInstance.Warning("Remote " + replyName + " command "
                     + (player == null || player.UserInfo == null ? "" : "from " + player.UserInfo.Username + " ")
                     + "refused: " + exception.Message);
             }
 
             if (reply.Length > ReplyLimit)
                 reply = reply.Substring(0, ReplyLimit) + "... (full report in the server log)";
-            Reply(__instance, player, reply);
+            Reply(__instance, player, replyName, reply);
         }
 
         /// <summary>Checks the signed message and returns the command it carries.</summary>
@@ -160,14 +175,86 @@ namespace ShardPerformance
             }
         }
 
-        private static void Reply(CommandSync sync, IPlayer player, string text)
+
+        /// <summary>
+        /// Admin command auth: a signed message (the developer's key, always allowed) OR an
+        /// unsigned one whose sender is on the owner's allowlist (ShardPerformance setting
+        /// AdminUsers). Either way the command still runs through the game's own
+        /// CommandService, which applies the sender's real permissions on top - this only
+        /// decides whether ShardPerformance forwards it at all. The sender's identity comes
+        /// from the game (IPlayer), not the client, so it can't be spoofed.
+        /// </summary>
+        private static string AuthenticateAdmin(string wire, IPlayer player, out string who)
+        {
+            who = player == null || player.UserInfo == null ? "?" : player.UserInfo.Username;
+            if (player == null || player.UserInfo == null)
+                throw new Exception("no player");
+
+            // Signed form: "v1 <payload> <sig>" - same check as perf, developer only.
+            string[] parts = wire.Split(' ');
+            if (parts.Length == 3 && parts[0] == "v1")
+                return Authenticate(wire, player, out who);
+
+            // Unsigned form: the raw command. Allowed only for an allowlisted admin.
+            if (!IsAllowlisted(player.UserInfo.Username))
+                throw new Exception("you are not an admin on this server (ask the owner to add you to AdminUsers)");
+            return wire;
+        }
+
+        /// <summary>True if this username is in the owner's AdminUsers list (comma/space separated, case-insensitive).</summary>
+        private static bool IsAllowlisted(string username)
+        {
+            string list = ShardPerformanceMod.Instance == null ? null : ShardPerformanceMod.Instance.AdminUsers;
+            if (string.IsNullOrWhiteSpace(list) || string.IsNullOrEmpty(username))
+                return false;
+            foreach (string name in list.Split(new[] { ',', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                if (name.Trim().Equals(username, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Runs a vanilla game console command on the server through the game's own
+        /// CommandService. We pass the server's current CommandContext (the one the game
+        /// already uses for its console), so the game's permission checks still apply; we do
+        /// not fabricate permissions. Returns the command's output text.
+        /// </summary>
+        private static string RunGameCommand(string command, IPlayer player)
+        {
+            command = (command ?? "").Trim();
+            if (command.Length == 0)
+                return "admin: nothing to run";
+
+            CommandContext context = CommandService.CurrentContext;
+            try
+            {
+                // Never block the server's main thread: most console commands (spawn, kick,
+                // settings) finish synchronously, so the task is already completed and we
+                // return its output now. If one is genuinely async, we don't wait on it -
+                // we say it's running and let it finish in the background.
+                var task = CommandService.Handle(command, context);
+                if (task.IsCompleted)
+                {
+                    CommandResult result = task.Result;
+                    string output = result == null ? null : result.ResultString;
+                    return string.IsNullOrEmpty(output) ? "admin: '" + command + "' ran (no output)" : output;
+                }
+                return "admin: '" + command + "' is running on the server (async; no immediate output).";
+            }
+            catch (Exception exception)
+            {
+                return "admin: '" + command + "' failed: " + (exception.InnerException ?? exception).Message;
+            }
+        }
+
+        private static void Reply(CommandSync sync, IPlayer player, string commandName, string text)
         {
             try
             {
                 // CommandSyncInfo's fields are readonly and its constructor wants a game
                 // CommandResult, so fill a boxed copy by reflection.
                 object info = default(CommandSync.CommandSyncInfo);
-                typeof(CommandSync.CommandSyncInfo).GetField("CommandName", BindingFlags.Public | BindingFlags.Instance).SetValue(info, "perf");
+                typeof(CommandSync.CommandSyncInfo).GetField("CommandName", BindingFlags.Public | BindingFlags.Instance).SetValue(info, commandName);
                 typeof(CommandSync.CommandSyncInfo).GetField("Result", BindingFlags.Public | BindingFlags.Instance).SetValue(info, text);
                 sync.syncCommandConfirmation.SendToPlayer(player, (CommandSync.CommandSyncInfo)info);
             }

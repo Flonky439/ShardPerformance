@@ -30,6 +30,7 @@ It does nothing on a client — only while the game instance is the server.
 | `ItemsSameChunkOnly` | **on** | A chunk streams its loose items/props only while a player is standing in that exact chunk. |
 | `GateIntervalSeconds` | `2` | How often the gating sweep runs. Lower = tighter, more CPU. |
 | `ReportIntervalSeconds` | `60` | Seconds between performance reports in the server log. `0` = off. |
+| `AdminUsers` | (empty) | Usernames (comma-separated) allowed to run `shard admin` server commands from inside the game. The game still applies each player's real permissions. |
 
 Measuring (frame times, physics rate, GC, chunk recompute cost, loaded chunks, entities,
 per-player chunk counts) is always on and cheap, regardless of the gating settings.
@@ -42,6 +43,18 @@ per-player chunk counts) is always on and cheap, regardless of the gating settin
 | `perf reset` | start a new measuring window now |
 | `perf settings` | show current settings and gating counters |
 | `perf set <name> <value>` | change a setting, e.g. `perf set ForestNearOnly off` |
+
+### Letting admins run commands from in-game
+
+If your admins also run **ShardClient**, they can run server commands from the VR console
+with `shard admin <command>`. Add their usernames to `AdminUsers`:
+
+```
+perf set AdminUsers irishduo,SomeAdmin
+```
+
+Their command is sent to this mod, which runs it through the game's own command system —
+so each admin's real permissions still apply. Anyone not on the list is refused.
 
 **Turn the aggressive parts off instantly:**
 ```

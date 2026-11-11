@@ -25,6 +25,7 @@ namespace ShardPerformance
         private MelonPreferences_Entry<bool> _forestNearOnly;
         private MelonPreferences_Entry<bool> _itemsSameChunkOnly;
         private MelonPreferences_Entry<float> _gateIntervalSeconds;
+        private MelonPreferences_Entry<string> _adminUsers;
 
         private float _nextReportAt;
         private float _nextGateAt;
@@ -33,6 +34,7 @@ namespace ShardPerformance
         internal bool ForestNearOnly => _forestNearOnly.Value;
         internal bool ItemsSameChunkOnly => _itemsSameChunkOnly.Value;
         internal float GateIntervalSeconds => _gateIntervalSeconds.Value;
+        internal string AdminUsers => _adminUsers == null ? "" : _adminUsers.Value;
 
         public override void OnInitializeMelon()
         {
@@ -46,6 +48,8 @@ namespace ShardPerformance
                 description: "Only stream a chunk's loose items/props while a player is in that exact chunk. Aggressive: neighbouring chunks' loose content is dropped.");
             _gateIntervalSeconds = _settings.CreateEntry("GateIntervalSeconds", 2f,
                 description: "Seconds between forest/item gating sweeps. Lower = tighter but more CPU; 2s is a good balance.");
+            _adminUsers = _settings.CreateEntry("AdminUsers", "",
+                description: "Usernames (comma-separated) allowed to run 'shard admin' server commands from their game. The game still applies each player's real permissions on top.");
 
             LoggerInstance.Msg(ForestGatePatch.Apply(HarmonyInstance));
             LoggerInstance.Msg(RemoteCommands.Apply(HarmonyInstance));
@@ -102,6 +106,9 @@ namespace ShardPerformance
                     break;
                 case "gateintervalseconds":
                     _gateIntervalSeconds.Value = Mathf.Clamp(float.Parse(value, System.Globalization.CultureInfo.InvariantCulture), 0.5f, 30f);
+                    break;
+                case "adminusers":
+                    _adminUsers.Value = value;
                     break;
                 default:
                     throw new ArgumentException("unknown setting '" + name + "'");
